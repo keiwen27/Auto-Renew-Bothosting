@@ -36,6 +36,8 @@ jobs:
 
       - name: 🚀 运行续期脚本
         env:
+          SESSION_TOKEN: ${{ secrets.SESSION_TOKEN }}
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           EMAIL: ${{ secrets.EMAIL }}
           PASSWORD: ${{ secrets.PASSWORD }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}

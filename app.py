@@ -1,20 +1,35 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import os, re, sys, time, random, requests, subprocess,ctypes
+import os, re, sys, json, time, random, requests, subprocess,ctypes
+import urllib.parse
 from seleniumbase import SB
 
 # 环境变量配置(可以直接私库在双引号里填写)
-EMAIL         = os.environ.get("EMAIL") or ""           # 邮箱必填，登录和通知使用
-PASSWORD      = os.environ.get("PASSWORD") or ""        # 主用密码登录方式, 失败时才使用,必须填写
+SESSION_TOKEN = os.environ.get("SESSION_TOKEN") or "" # session token cookie,默认登录方式,非必须
+DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN") or "" # Discord Token 备用登录方式,失败时才使用,非必须
+EMAIL         = os.environ.get("EMAIL") or ""           # 邮箱,密码登录方式使用,可选
+PASSWORD      = os.environ.get("PASSWORD") or ""        # 密码登录方式使用,可选
 TG_CHAT_ID    = os.environ.get("TG_CHAT_ID") or ""      # TG chat id,不填写不通知，需和bot token一起填写生效
-TG_BOT_TOKEN  = os.environ.get("TG_BOT_TOKEN") or ""    # TG bot token 
+TG_BOT_TOKEN  = os.environ.get("TG_BOT_TOKEN") or ""    # TG bot token
 
 BASE_URL = "https://bot-hosting.net"
 
-if not (EMAIL and PASSWORD):
-    print("ℹ️ 未配置 EMAIL 和 PASSWORD,脚本终止。")
+# 解析 DISCORD_TOKEN (格式: 邮箱,token 时取 token 部分)
+DC_TOKEN = ""
+if DISCORD_TOKEN:
+    DC_TOKEN = DISCORD_TOKEN.split(",", 1)[-1].strip()
+
+if not SESSION_TOKEN and not DC_TOKEN and not (EMAIL and PASSWORD):
+    print("ℹ️ 未配置 SESSION_TOKEN / DISCORD_TOKEN / EMAIL+PASSWORD,脚本终止。")
     sys.exit(1)
+
+# 构造 cookie
+COOKIES = {
+    "session_token": SESSION_TOKEN,
+    "login": "true",
+    "theme": "system",
+}
 
 # 发送tg通知
 def send_telegram_message(message: str):
@@ -346,6 +361,192 @@ def get_expiry_from_dom(sb) -> str:
             pass
     return None
 
+# ---------- 登录方式: SESSION_TOKEN Cookie ----------
+def cookie_login(sb) -> bool:
+    """注入 session_token cookie 后访问账单页验证"""
+    print("🚀 启动浏览器...")
+    sb.open("https://bot-hosting.net/")
+    sb.wait_for_ready_state_complete()
+    sb.sleep(2)
+
+    print("📝 注入 Cookie...")
+    for name, value in COOKIES.items():
+        if value:
+            sb.add_cookie({"name": name, "value": value, "domain": "bot-hosting.net"})
+
+    print("🌐 访问 https://bot-hosting.net/a/billings ...")
+    sb.open("https://bot-hosting.net/a/billings")
+    sb.wait_for_ready_state_complete()
+    sb.sleep(3)
+    current_url = sb.get_current_url()
+    current_title = sb.get_title()
+    print(f"📝 当前URL: {current_url}, Title: {current_title}")
+
+    if "/a/billings" in current_url and "/login" not in current_url and "error=" not in current_url:
+        print("✅ SESSION_TOKEN 登录成功, 当前已到达账单页")
+        return True
+    print(f"❌ SESSION_TOKEN 登录失败，当前URL: {current_url}, 当前标题: {current_title}")
+    return False
+
+# ---------- 登录方式: Discord OAuth ----------
+DISCORD_CLIENT_ID   = "884382422530158623"
+OAUTH_REDIRECT_URI  = "https://bot-hosting.net/login"
+OAUTH_SCOPE         = "identify email guilds"
+DISCORD_API         = "https://discord.com/api/v9/oauth2/authorize"
+DISCORD_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+)
+STATE_RE = re.compile(r"[?&]state=([^&]+)")
+
+
+def capture_discord_state(sb) -> str:
+    """打开 /login/discord，从落地页 URL 里提取本次会话的 state"""
+    print("🔎 获取 Discord OAuth state...")
+    sb.uc_open_with_reconnect("https://bot-hosting.net/login/discord", reconnect_time=4)
+    time.sleep(2)
+
+    url = sb.get_current_url()
+    if "discord.com" not in url:
+        print(f"⚠️ 未跳转到 Discord 相关页面，当前 URL：{url}")
+        return ""
+
+    m = STATE_RE.search(url)
+    if not m:
+        print(f"❌ 未能从 URL 中解析出 state，当前 URL：{url}")
+        return ""
+
+    state = urllib.parse.unquote(m.group(1))
+    print(f"✅ 已捕获 state（当前落地页：{urllib.parse.urlparse(url).path}）")
+    return state
+
+
+def discord_authorize(state: str) -> str:
+    """用 DC_TOKEN 直接完成 Discord 侧授权，返回跳转回 bot-hosting.net 的 location"""
+    query = urllib.parse.urlencode({
+        "client_id":     DISCORD_CLIENT_ID,
+        "response_type": "code",
+        "redirect_uri":  OAUTH_REDIRECT_URI,
+        "scope":         OAUTH_SCOPE,
+        "state":         state,
+    })
+    authorize_url = f"{DISCORD_API}?{query}"
+
+    referer = (
+        "https://discord.com/oauth2/authorize?" +
+        urllib.parse.urlencode({
+            "client_id":     DISCORD_CLIENT_ID,
+            "redirect_uri":  OAUTH_REDIRECT_URI,
+            "response_type": "code",
+            "scope":         OAUTH_SCOPE,
+            "state":         state,
+        })
+    )
+
+    headers = {
+        "accept":           "*/*",
+        "authorization":    DC_TOKEN,
+        "content-type":     "application/json",
+        "origin":           "https://discord.com",
+        "referer":          referer,
+        "user-agent":       DISCORD_UA,
+        "x-discord-locale": "zh-CN",
+    }
+
+    body = json.dumps({
+        "permissions": "0",
+        "authorize": True,
+        "integration_type": 0,
+        "location_context": {
+            "guild_id": "10000",
+            "channel_id": "10000",
+            "channel_type": 10000,
+        },
+    })
+
+    # 如果配置了代理，Discord API 请求也走代理
+    proxies = None
+    _is_proxy = os.environ.get("IS_PROXY", "false").lower() == "true"
+    _proxy_server = os.environ.get("PROXY_SERVER", "").strip() or "http://127.0.0.1:1080"
+    if _is_proxy:
+        proxies = {"http": _proxy_server, "https": _proxy_server}
+
+    try:
+        resp = requests.post(authorize_url, headers=headers, data=body, proxies=proxies, timeout=20)
+        if resp.status_code != 200:
+            print(f"❌ Discord OAuth2 授权失败: HTTP {resp.status_code} - {resp.text[:300]}")
+            return ""
+        resp_data = resp.json()
+    except Exception as e:
+        print(f"❌ Discord OAuth2 授权异常: {e}")
+        return ""
+
+    location = resp_data.get("location", "")
+    if not location:
+        print(f"❌ 授权响应中未找到 location 字段: {resp_data}")
+        return ""
+
+    masked = re.sub(r"code=[^&]+", "code=***", location)
+    print(f"✅ 拿到回调 URL: {masked}")
+    return location
+
+
+def do_discord_login(sb) -> bool:
+    """通过 Discord Token 走完整 OAuth 流程登录 bot-hosting.net"""
+    print("\n🔑 通过 Discord Token 登录...")
+
+    state = capture_discord_state(sb)
+    if not state:
+        sb.save_screenshot("login_no_state.png")
+        return False
+
+    location = discord_authorize(state)
+    if not location:
+        return False
+
+    print("↩️ 携带授权码打开回调链接...")
+    sb.uc_open_with_reconnect(location, reconnect_time=4)
+    time.sleep(3)
+
+    url = sb.get_current_url()
+
+    if "/error/banned" in url:
+        print("🚫 账号已被封禁")
+        sb.save_screenshot("login_banned.png")
+        return False
+
+    if "bot-hosting.net" not in url:
+        print(f"❌ 回调后未跳转至 bot-hosting.net，当前 URL：{url}")
+        sb.save_screenshot("login_no_redirect.png")
+        return False
+
+    try:
+        body_text = sb.get_text("body")
+    except Exception:
+        body_text = ""
+    if "fraud" in body_text.lower():
+        print("🚫 触发风控（fraud attempt），可能是 IP 被拦截")
+        sb.save_screenshot("login_fraud.png")
+        return False
+
+    for _ in range(30):
+        url = sb.get_current_url()
+        path = urllib.parse.urlparse(url).path
+        if "bot-hosting.net" in url and path != "/login" and not path.startswith("/login/discord"):
+            print(f"✅ Discord OAuth 登录成功！当前页面：{url}")
+            return True
+        time.sleep(0.5)
+
+    print(f"❌ 登录超时或未跳转成功，最终停留在：{url}")
+    try:
+        body_text = sb.get_text("body")
+        print(f"📄 页面正文片段：{body_text[:200].strip()!r}")
+    except Exception:
+        pass
+    sb.save_screenshot("login_timeout.png")
+    return False
+
+
 # 主流程
 def main():
     print("#" * 25)
@@ -373,8 +574,32 @@ def main():
 
         login_ok = False
 
-        # 账号密码登录（密码不过期，唯一登录方式；整段兜异常，失败只标记 login_ok=False 走统一失败通知）
-        if EMAIL and PASSWORD:
+        # 方式1: SESSION_TOKEN Cookie 登录（默认）
+        if not login_ok and SESSION_TOKEN:
+            print("🔄 尝试 SESSION_TOKEN Cookie 登录...")
+            if cookie_login(sb):
+                login_ok = True
+
+        # 方式2: Discord OAuth 登录（备用）
+        if not login_ok and DC_TOKEN:
+            print("\n🔄 SESSION_TOKEN 登录失败或未配置，尝试 Discord OAuth 登录...")
+            if do_discord_login(sb):
+                print("🌐 访问 https://bot-hosting.net/a/billings ...")
+                sb.open("https://bot-hosting.net/a/billings")
+                sb.wait_for_ready_state_complete()
+                sb.sleep(3)
+                current_url = sb.get_current_url()
+                print(f"📝 当前URL: {current_url}")
+                if "/a/billings" in current_url:
+                    login_ok = True
+                    print("✅ Discord OAuth 登录成功,当前已到达账单页")
+                else:
+                    print(f"❌ Discord OAuth 登录后仍未到达账单页，当前URL: {current_url}")
+            else:
+                print("❌ Discord OAuth 登录失败")
+
+        # 方式3: 账号密码登录（兜底；整段兜异常，失败只标记 login_ok=False 走统一失败通知）
+        if not login_ok and EMAIL and PASSWORD:
             print("🚀 启动浏览器...")
             try:
                 print(f"🌐 访问 {BASE_URL}/login")
@@ -422,7 +647,12 @@ def main():
                     print(f"❌ Password 登录过程异常: {type(e).__name__}: {str(e)[:150]}")
 
         if not login_ok:
-            send_telegram_message(format_notification("❌ 登录失败", error="Password 登录失败"))
+            error_msg = "所有登录方式均失败"
+            if not SESSION_TOKEN and not DC_TOKEN:
+                error_msg = "Password 登录失败"
+            elif SESSION_TOKEN and DC_TOKEN:
+                error_msg = "SESSION_TOKEN 和 Discord OAuth 均失败"
+            send_telegram_message(format_notification("❌ 登录失败", error=error_msg))
             return
 
         # 提取当前到期日期
