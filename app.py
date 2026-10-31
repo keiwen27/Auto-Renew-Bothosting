@@ -44,9 +44,39 @@ def send_telegram_message(message: str):
         print(f"❌ Telegram 发送失败: {e}")
 
 # 通知格式
+_ACCOUNT_EMAIL = ""   # 登录后从 Discord API 或页面获取的账号邮箱
+
+def fetch_discord_email() -> str:
+    """用 DC_TOKEN 查询 Discord 账号邮箱"""
+    if not DC_TOKEN:
+        return ""
+    try:
+        resp = requests.get(
+            "https://discord.com/api/v9/users/@me",
+            headers={"authorization": DC_TOKEN, "user-agent": DISCORD_UA},
+            timeout=15,
+        )
+        if resp.status_code == 200:
+            email = (resp.json() or {}).get("email") or ""
+            if email:
+                print(f"📧 已获取 Discord 账号邮箱")
+            return email
+        print(f"⚠️ 获取 Discord 账号信息失败: HTTP {resp.status_code}")
+    except Exception as e:
+        print(f"⚠️ 获取 Discord 账号信息异常: {e}")
+    return ""
+
+def scrape_page_email(sb) -> str:
+    """从当前页面文本里提取账号邮箱"""
+    try:
+        m = re.search(r"[\w.+-]+@[\w-]+\.[\w.-]+", sb.get_page_source())
+        return m.group(0) if m else ""
+    except Exception:
+        return ""
+
 def masked_account() -> str:
-    """优先 EMAIL, 其次 DISCORD_TOKEN 里携带的邮箱, 均无则返回未知"""
-    raw = EMAIL
+    """优先 EMAIL, 其次登录后获取的邮箱, 再次 DISCORD_TOKEN 里携带的邮箱, 均无则返回未知"""
+    raw = EMAIL or _ACCOUNT_EMAIL
     if not raw and DISCORD_TOKEN and ',' in DISCORD_TOKEN:
         first = DISCORD_TOKEN.split(',', 1)[0].strip()
         if '@' in first:
@@ -373,6 +403,7 @@ def get_expiry_from_dom(sb) -> str:
 # ---------- 登录方式: SESSION_TOKEN Cookie ----------
 def cookie_login(sb) -> bool:
     """注入 session_token cookie 后访问账单页验证"""
+    global _ACCOUNT_EMAIL
     print("🚀 启动浏览器...")
     sb.open("https://bot-hosting.net/")
     sb.wait_for_ready_state_complete()
@@ -393,6 +424,7 @@ def cookie_login(sb) -> bool:
 
     if "/a/billings" in current_url and "/login" not in current_url and "error=" not in current_url:
         print("✅ SESSION_TOKEN 登录成功, 当前已到达账单页")
+        _ACCOUNT_EMAIL = scrape_page_email(sb)
         return True
     print(f"❌ SESSION_TOKEN 登录失败，当前URL: {current_url}, 当前标题: {current_title}")
     return False
@@ -502,6 +534,7 @@ def discord_authorize(state: str) -> str:
 
 def do_discord_login(sb) -> bool:
     """通过 Discord Token 走完整 OAuth 流程登录 bot-hosting.net"""
+    global _ACCOUNT_EMAIL
     print("\n🔑 通过 Discord Token 登录...")
 
     state = capture_discord_state(sb)
@@ -543,6 +576,7 @@ def do_discord_login(sb) -> bool:
         path = urllib.parse.urlparse(url).path
         if "bot-hosting.net" in url and path != "/login" and not path.startswith("/login/discord"):
             print(f"✅ Discord OAuth 登录成功！当前页面：{url}")
+            _ACCOUNT_EMAIL = fetch_discord_email() or scrape_page_email(sb)
             return True
         time.sleep(0.5)
 
