@@ -44,17 +44,26 @@ def send_telegram_message(message: str):
         print(f"❌ Telegram 发送失败: {e}")
 
 # 通知格式
+def masked_account() -> str:
+    """优先 EMAIL, 其次 DISCORD_TOKEN 里携带的邮箱, 均无则返回未知"""
+    raw = EMAIL
+    if not raw and DISCORD_TOKEN and ',' in DISCORD_TOKEN:
+        first = DISCORD_TOKEN.split(',', 1)[0].strip()
+        if '@' in first:
+            raw = first
+    if '@' in raw:
+        name, domain = raw.split('@', 1)
+        if len(name) > 4:
+            return f"{name[:2]}****{name[-2:]}@{domain}"
+        return f"{name}@{domain}"
+    if raw:
+        return raw[:2] + '****'
+    return "未知"
+
 def format_notification(status: str, extra: str = "", error: str = "", expiry_date: str = "") -> str:
     local_time = time.gmtime(time.time() + 8 * 3600)
     now = time.strftime("%Y-%m-%d %H:%M:%S", local_time)
-    if '@' in EMAIL:
-        name, domain = EMAIL.split('@', 1)
-        if len(name) > 4:
-            masked_email = f"{name[:2]}****{name[-2:]}@{domain}"
-        else:
-            masked_email = f"{name}@{domain}"
-    else:
-        masked_email = EMAIL[:2] + '****' 
+    masked_email = masked_account()
     
     lines = [
         "🇫🇮 Bot-hosting 续期通知",
