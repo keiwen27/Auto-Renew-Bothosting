@@ -300,6 +300,16 @@ def format_countdown(countdown_str: str) -> str:
     except:
         return countdown_str
 
+MAX_COOLDOWN_WAIT = 90 * 60  # 冷却剩余不超过90分钟时原地等待, 超过则跳过本次
+
+# 解析 HH:MM:SS 倒计时为秒数
+def parse_countdown_seconds(text: str) -> int:
+    try:
+        h, m, s = [int(x) for x in text.split(':')]
+        return h * 3600 + m * 60 + s
+    except Exception:
+        return 0
+
 # 归一化日期为 YYYY/MM/DD
 def normalize_date(date_str: str) -> str:
     parts = date_str.split('/')
@@ -446,7 +456,15 @@ def main():
                     match = re.search(r"(?:Renew in|Renewal cooldown)\s+(\d{1,2}:\d{2}:\d{2})", button_text, re.I)
                     if match:
                         countdown_text = match.group(1)
-                        print(f"⏳ 续期冷却中, 未到续期时间: '{button_text}'")
+                        # 定时任务常被推迟到冷却结束前几分钟才运行, 剩余时间不长就原地等冷却结束再续, 避免每天空跑
+                        if parse_countdown_seconds(countdown_text) <= MAX_COOLDOWN_WAIT:
+                            print(f"⏳ 续期冷却中, 剩余 {countdown_text}, 等待冷却结束后续期...")
+                            time.sleep(parse_countdown_seconds(countdown_text) + 90)
+                            outer_renew_selector = selector
+                            countdown_text = None
+                            print("✅ 冷却已结束, 继续续期流程")
+                        else:
+                            print(f"⏳ 续期冷却中, 剩余 {countdown_text}, 超过等待上限, 跳过本次")
                         break
                     elif "Renew" in button_text:
                         outer_renew_selector = selector
@@ -488,18 +506,22 @@ def main():
                 send_telegram_message(format_notification("❌ 续期失败", error="Turnstile 验证未通过"))
                 return
 
-            # 点击续期按钮
+            # 点击续期按钮 (冷却刚结束时弹窗可能延迟出现, 重试几次)
             print("⏳ 等待续期按钮可用并点击...")
-            time.sleep(5) 
+            time.sleep(5)
 
             modal_button_clicked = False
-            try:
-                selector = 'div[role="dialog"] button.btn-primary' 
-                sb.click(selector, timeout=8)
-                modal_button_clicked = True
-                print("✅ 已点击续期按钮")
-            except Exception as e:
-                print(f"续期按钮点击失败: {e}")
+            for attempt in range(1, 4):
+                try:
+                    sb.click('div[role="dialog"] button.btn-primary', timeout=20)
+                    modal_button_clicked = True
+                    print("✅ 已点击续期按钮")
+                    break
+                except Exception as e:
+                    print(f"⏳ 第 {attempt}/3 次未点到续期按钮, 稍后重试: {type(e).__name__}")
+                    time.sleep(20)
+            if not modal_button_clicked:
+                print("❌ 多次尝试后仍未点到续期按钮")
 
             print("⏳ 等待新的过期时间...")
             sb.sleep(6)
