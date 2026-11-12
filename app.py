@@ -370,8 +370,17 @@ def parse_countdown_seconds(text: str) -> int:
     except Exception:
         return 0
 
+MONTHS = {
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+    "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+}
+
 # 归一化日期为 YYYY/MM/DD
 def normalize_date(date_str: str) -> str:
+    # "15 Nov 2026" (DD Mon YYYY)
+    m = re.match(r"(\d{1,2})\s+([A-Za-z]{3,9})\.?,?\s+(\d{4})", date_str)
+    if m and m.group(2).lower()[:3] in MONTHS:
+        return f"{m.group(3)}/{MONTHS[m.group(2).lower()[:3]]:02d}/{int(m.group(1)):02d}"
     parts = date_str.split('/')
     if len(parts) == 3:
         if len(parts[2]) == 4:   # MM/DD/YYYY
@@ -380,7 +389,7 @@ def normalize_date(date_str: str) -> str:
             return f"{parts[0]}/{int(parts[1]):02d}/{int(parts[2]):02d}"
     return date_str
 
-DATE_RE = r"(\d{4}/\d{1,2}/\d{1,2}|\d{1,2}/\d{1,2}/\d{4})"
+DATE_RE = r"(\d{4}/\d{1,2}/\d{1,2}|\d{1,2}/\d{1,2}/\d{4}|\d{1,2}\s+[A-Za-z]{3,9}\.?,?\s+\d{4})"
 
 # 获取过期日期
 def extract_expiry_date(page_source: str) -> str:
