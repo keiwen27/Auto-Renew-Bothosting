@@ -730,6 +730,24 @@ def main():
         else:
             print("⚠️ 未能提取当前到期日期")
 
+        # 到期日尚远(>3天)时无需续期, 按钮此时点了也无效
+        try:
+            from datetime import datetime as _dt
+            exp_day = _dt.strptime(current_expiry, "%Y/%m/%d")
+            days_left = (exp_day.date() - _dt.utcnow().date()).days
+            if days_left > 3:
+                print(f"✅ 到期日距今还有 {days_left} 天, 无需续期")
+                send_telegram_message(
+                    format_notification(
+                        "✅ 无需续期",
+                        extra=f"📅 到期时间: {current_expiry} (还有 {days_left} 天)",
+                        expiry_date=current_expiry,
+                    )
+                )
+                return
+        except Exception:
+            pass  # 日期解析失败时继续走续期流程兜底
+
         # 寻找外部续期按钮
         outer_renew_selector = None
         countdown_text = None
@@ -854,7 +872,33 @@ def main():
                         )
                     )
                 else:
-                    print("⚠️ 续期结果未知，到期日期未变化，请手动检查")
+                    # 到期日未变化: 若距今仍有2天以上, 多半是24小时续期冷却中, 点击无效属正常
+                    cooldown_likely = False
+                    try:
+                        from datetime import datetime as _dt2
+                        if new_expiry:
+                            left = (_dt2.strptime(new_expiry, "%Y/%m/%d").date() - _dt2.utcnow().date()).days
+                            cooldown_likely = left >= 2
+                    except Exception:
+                        pass
+                    if cooldown_likely:
+                        print(f"ℹ️ 到期日未变化 ({new_expiry}), 大概率处于续期冷却中, 无需处理")
+                        send_telegram_message(
+                            format_notification(
+                                "ℹ️ 到期日未变化",
+                                extra="⏳ 可能处于24小时续期冷却中, 状态正常",
+                                expiry_date=new_expiry or "（未获取到）"
+                            )
+                        )
+                    else:
+                        print("⚠️ 续期结果未知，到期日期未变化，请手动检查")
+                        send_telegram_message(
+                            format_notification(
+                                "⚠️ 续期可能未成功",
+                                extra="请登录后台检查",
+                                expiry_date=current_expiry or "（未获取到）"
+                            )
+                        )
                     send_telegram_message(
                         format_notification(
                             "⚠️ 续期可能未成功",
