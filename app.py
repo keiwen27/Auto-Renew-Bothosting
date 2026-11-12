@@ -710,6 +710,10 @@ def main():
             page_source = sb.get_page_text() + "\n" + sb.get_page_source()
         except Exception:
             page_source = sb.get_page_source()
+        try:
+            print(f"📄 账单页文本片段: {sb.get_page_text()[:400]!r}")
+        except Exception:
+            pass
         current_expiry = get_expiry_from_dom(sb) or extract_expiry_date(page_source)
         if current_expiry:
             print(f"📅 当前到期日期: {current_expiry}")
@@ -810,6 +814,10 @@ def main():
                 new_page_text = sb.get_page_text() + "\n" + sb.get_page_source()
             except Exception:
                 new_page_text = sb.get_page_source()
+            try:
+                print(f"📄 续期后页面文本片段: {sb.get_page_text()[:400]!r}")
+            except Exception:
+                pass
             new_expiry = get_expiry_from_dom(sb) or extract_expiry_date(new_page_text)
             new_match = re.search(r"(?:Renewal cooldown|Renew in)\s+(\d{1,2}:\d{2}:\d{2})", new_page_text)
             if new_match:
