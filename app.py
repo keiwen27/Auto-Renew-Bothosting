@@ -31,6 +31,12 @@ COOKIES = {
     "theme": "system",
 }
 
+# 账单页地址 (站点曾从 /a/billings 改为 /dash/billings, 判断只认 billings 关键字)
+BILLINGS_URL = f"{BASE_URL}/dash/billings"
+
+def is_billings_url(url: str) -> bool:
+    return "billings" in (url or "") and "/login" not in url and "error=" not in url
+
 # 发送tg通知
 def send_telegram_message(message: str):
     if not TG_BOT_TOKEN or not TG_CHAT_ID:
@@ -414,15 +420,15 @@ def cookie_login(sb) -> bool:
         if value:
             sb.add_cookie({"name": name, "value": value, "domain": "bot-hosting.net"})
 
-    print("🌐 访问 https://bot-hosting.net/a/billings ...")
-    sb.open("https://bot-hosting.net/a/billings")
+    print(f"🌐 访问 {BILLINGS_URL} ...")
+    sb.open(BILLINGS_URL)
     sb.wait_for_ready_state_complete()
     sb.sleep(3)
     current_url = sb.get_current_url()
     current_title = sb.get_title()
     print(f"📝 当前URL: {current_url}, Title: {current_title}")
 
-    if "/a/billings" in current_url and "/login" not in current_url and "error=" not in current_url:
+    if is_billings_url(current_url):
         print("✅ SESSION_TOKEN 登录成功, 当前已到达账单页")
         _ACCOUNT_EMAIL = scrape_page_email(sb)
         return True
@@ -627,13 +633,13 @@ def main():
         if not login_ok and DC_TOKEN:
             print("\n🔄 SESSION_TOKEN 登录失败或未配置，尝试 Discord OAuth 登录...")
             if do_discord_login(sb):
-                print("🌐 访问 https://bot-hosting.net/a/billings ...")
-                sb.open("https://bot-hosting.net/a/billings")
+                print(f"🌐 访问 {BILLINGS_URL} ...")
+                sb.open(BILLINGS_URL)
                 sb.wait_for_ready_state_complete()
                 sb.sleep(3)
                 current_url = sb.get_current_url()
                 print(f"📝 当前URL: {current_url}")
-                if "/a/billings" in current_url:
+                if is_billings_url(current_url):
                     login_ok = True
                     print("✅ Discord OAuth 登录成功,当前已到达账单页")
                 else:
@@ -674,14 +680,14 @@ def main():
                 print("🖱️ 提交登录按钮")
                 sb.sleep(6)  # 等待页面加载
                 sb.wait_for_ready_state_complete()
-                sb.open(f"{BASE_URL}/a/billings")
+                sb.open(BILLINGS_URL)
                 sb.wait_for_ready_state_complete()
                 sb.sleep(3)
                 current_url = sb.get_current_url()
                 current_title = sb.get_title()
                 print(f"📝 当前URL: {current_url}, Title: {current_title}")
 
-                if "/a/billings" in current_url and "/login" not in current_url and "error=" not in current_url:
+                if is_billings_url(current_url):
                     login_ok = True
                     print("✅ Password 登录成功,当前已到达账单页")
                 else:
