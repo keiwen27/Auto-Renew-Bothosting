@@ -899,13 +899,6 @@ def main():
                                 expiry_date=current_expiry or "（未获取到）"
                             )
                         )
-                    send_telegram_message(
-                        format_notification(
-                            "⚠️ 续期可能未成功",
-                            extra="请登录后台检查",
-                            expiry_date=current_expiry or "（未获取到）"
-                        )
-                    )
 
         else:
             if countdown_text:
