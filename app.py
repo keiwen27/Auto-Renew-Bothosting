@@ -864,6 +864,30 @@ def main():
                         break
                     except Exception:
                         continue
+                # 点击后检查弹窗是否还在: 还在说明点击未生效, 改用 CDP 真实鼠标点击兜底
+                try:
+                    sb.sleep(3)
+                    state = sb.execute_script(
+                        "var d=document.querySelector('[role=\"dialog\"], [class*=\"modal\"]');"
+                        "if(!d) return 'closed';"
+                        "var b=d.querySelector('button.btn-primary, button');"
+                        "if(!b) return 'closed';"
+                        "b.scrollIntoView({block:'center'});"
+                        "var r=b.getBoundingClientRect();"
+                        "return 'open:' + Math.round(r.x + r.width/2) + ',' + Math.round(r.y + r.height/2);"
+                    )
+                    if isinstance(state, str) and state.startswith("open:"):
+                        xy = state[5:].split(",")
+                        print(f"⚠️ 点击后弹窗仍在, 尝试 CDP 真实鼠标点击 ({xy[0]},{xy[1]})...")
+                        try:
+                            sb.cdp.mouse_click(int(float(xy[0])), int(float(xy[1])))
+                            print("🖱️ CDP 点击完成")
+                        except Exception as e:
+                            print(f"⚠️ CDP 点击失败: {e}")
+                    else:
+                        print("✅ 点击后弹窗已关闭 (可能已提交)")
+                except Exception as e:
+                    print(f"⚠️ 弹窗状态检查失败: {e}")
                 if modal_button_clicked:
                     break
                 print(f"⏳ 第 {attempt}/3 轮未点到确认按钮, 重试...")
