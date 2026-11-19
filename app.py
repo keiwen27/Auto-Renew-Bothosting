@@ -870,18 +870,13 @@ def main():
                     state = sb.execute_script(
                         "var d=document.querySelector('[role=\"dialog\"], [class*=\"modal\"]');"
                         "if(!d) return 'closed';"
-                        "var b=d.querySelector('button.btn-primary, button');"
-                        "if(!b) return 'closed';"
-                        "b.scrollIntoView({block:'center'});"
-                        "var r=b.getBoundingClientRect();"
-                        "return 'open:' + Math.round(r.x + r.width/2) + ',' + Math.round(r.y + r.height/2);"
+                        "return 'open:' + d.innerText.substring(0, 150);"
                     )
                     if isinstance(state, str) and state.startswith("open:"):
-                        xy = state[5:].split(",")
-                        print(f"⚠️ 点击后弹窗仍在, 尝试 CDP 真实鼠标点击 ({xy[0]},{xy[1]})...")
+                        print(f"⚠️ 点击后弹窗仍在: {state[5:]!r}")
                         try:
-                            sb.cdp.mouse_click(int(float(xy[0])), int(float(xy[1])))
-                            print("🖱️ CDP 点击完成")
+                            sb.cdp.mouse_click('div[role="dialog"] button.btn-primary')
+                            print("🖱️ CDP 真实鼠标点击完成")
                         except Exception as e:
                             print(f"⚠️ CDP 点击失败: {e}")
                     else:
