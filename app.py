@@ -846,11 +846,16 @@ def main():
                 try:
                     dlg_text = sb.execute_script(
                         "var d=document.querySelector('[role=\"dialog\"],[class*=\"modal\"]');"
-                        "return d?d.innerText.substring(0,200):'(无弹窗)'"
+                        "if(!d) return '(无弹窗)';"
+                        "var out=['[文本] '+d.innerText.substring(0,150)];"
+                        "d.querySelectorAll('button, a').forEach(function(b){"
+                        " out.push((b.tagName)+' cls=\"'+String(b.className).slice(0,50)+'\" text=\"'+(b.innerText||'').trim().slice(0,40)+'\" disabled='+b.disabled);"
+                        "});"
+                        "return out.join('\\n')"
                     )
-                    print(f"🗂️ 弹窗内容: {dlg_text!r}")
-                except Exception:
-                    dlg_text = "(读取失败)"
+                    print(f"🗂️ 弹窗内容:\n{dlg_text}")
+                except Exception as e:
+                    print(f"⚠️ 读取弹窗失败: {e}")
                 for sel in modal_selectors:
                     try:
                         sb.click(sel, timeout=6)
