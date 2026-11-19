@@ -817,25 +817,65 @@ def main():
                 send_telegram_message(format_notification("❌ 续期失败", error="Turnstile 验证未通过"))
                 return
 
-            # 点击续期按钮 (冷却刚结束时弹窗可能延迟出现, 重试几次)
+            # 点击续期确认按钮 (弹窗结构可能变化, 多选择器兜底; 点完刷新页面再读日期)
             print("⏳ 等待续期按钮可用并点击...")
             time.sleep(5)
 
+            modal_selectors = [
+                'div[role="dialog"] button.btn-primary',
+                'div[role="dialog"] button:contains("Renew for 4 days")',
+                'button:contains("Renew for 4 days")',
+                'div[role="dialog"] button:contains("Renew")',
+                'button.btn-primary:contains("Renew")',
+                'div[role="dialog"] button:contains("Confirm")',
+            ]
             modal_button_clicked = False
             for attempt in range(1, 4):
+                if attempt > 1:
+                    # 弹窗可能被上一轮点击关掉, 重新走一遍外层流程
+                    try:
+                        sb.open(BILLINGS_URL)
+                        sb.wait_for_ready_state_complete()
+                        sb.sleep(3)
+                        sb.click(outer_renew_selector)
+                        sb.sleep(12)
+                        if wait_turnstile_present(sb):
+                            handle_turnstile(sb)
+                    except Exception as e:
+                        print(f"⚠️ 重建弹窗失败: {type(e).__name__}")
                 try:
-                    sb.click('div[role="dialog"] button.btn-primary', timeout=20)
-                    modal_button_clicked = True
-                    print("✅ 已点击续期按钮")
+                    dlg_text = sb.execute_script(
+                        "var d=document.querySelector('[role=\"dialog\"],[class*=\"modal\"]');"
+                        "return d?d.innerText.substring(0,200):'(无弹窗)'"
+                    )
+                    print(f"🗂️ 弹窗内容: {dlg_text!r}")
+                except Exception:
+                    dlg_text = "(读取失败)"
+                for sel in modal_selectors:
+                    try:
+                        sb.click(sel, timeout=6)
+                        modal_button_clicked = True
+                        print(f"✅ 已点击续期确认按钮 ({sel})")
+                        break
+                    except Exception:
+                        continue
+                if modal_button_clicked:
                     break
-                except Exception as e:
-                    print(f"⏳ 第 {attempt}/3 次未点到续期按钮, 稍后重试: {type(e).__name__}")
-                    time.sleep(20)
+                print(f"⏳ 第 {attempt}/3 轮未点到确认按钮, 重试...")
+                time.sleep(15)
             if not modal_button_clicked:
-                print("❌ 多次尝试后仍未点到续期按钮")
+                print("❌ 多次尝试后仍未点到续期确认按钮")
 
             print("⏳ 等待新的过期时间...")
-            sb.sleep(6)
+            sb.sleep(4)
+            try:
+                sb.open(BILLINGS_URL)   # 刷新页面, 确保读到最新到期日
+                sb.wait_for_ready_state_complete()
+                sb.sleep(4)
+                print("🔄 已刷新账单页")
+            except Exception:
+                pass
+            sb.sleep(2)
 
             # 提取新的到期日期和倒计时
             try:
