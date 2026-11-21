@@ -851,6 +851,8 @@ def main():
                         "d.querySelectorAll('button, a').forEach(function(b){"
                         " out.push((b.tagName)+' cls=\"'+String(b.className).slice(0,50)+'\" text=\"'+(b.innerText||'').trim().slice(0,40)+'\" disabled='+b.disabled);"
                         "});"
+                        "out.push('弹窗内iframe数: '+d.querySelectorAll('iframe').length);"
+                        "out.push('弹窗内turnstile输入: '+(d.querySelector('input[name=\"cf-turnstile-response\"]')?'有':'无'));"
                         "return out.join('\\n')"
                     )
                     print(f"🗂️ 弹窗内容:\n{dlg_text}")
