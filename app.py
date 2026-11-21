@@ -865,12 +865,14 @@ def main():
                     sb.execute_script(
                         "if(!window.__hooked){ window.__hooked=true; window.__calls=[];"
                         " const of=window.fetch;"
-                        " window.fetch=function(u,o){ var rec={u:String(u).substring(0,150), m:(o&&o.method)||'GET', s:null};"
+                        " window.fetch=function(u,o){ var rec={u:String(u).substring(0,150), m:(o&&o.method)||'GET', s:null, b:null, req:(o&&typeof o.body==='string')?o.body.substring(0,300):null};"
                         "  window.__calls.push(rec);"
-                        "  return of.apply(this,arguments).then(function(r){ rec.s=r.status; return r; }); };"
+                        "  return of.apply(this,arguments).then(function(r){ rec.s=r.status;"
+                        "   try{ r.clone().text().then(function(t){ rec.b=t.substring(0,300); }); }catch(e){}"
+                        "   return r; }); };"
                         " const ox=XMLHttpRequest.prototype.open, os=XMLHttpRequest.prototype.send;"
-                        " XMLHttpRequest.prototype.open=function(m,u){ this.__rec={m:m,u:String(u).substring(0,150)}; window.__calls.push(this.__rec); return ox.apply(this,arguments); };"
-                        " XMLHttpRequest.prototype.send=function(){ var r=this; this.addEventListener('loadend',function(){ r.__rec.s=r.status; }); return os.apply(this,arguments); };"
+                        " XMLHttpRequest.prototype.open=function(m,u){ this.__rec={m:m,u:String(u).substring(0,150),s:null,b:null,req:null}; window.__calls.push(this.__rec); return ox.apply(this,arguments); };"
+                        " XMLHttpRequest.prototype.send=function(bd){ var r=this; if(typeof bd==='string') r.__rec.req=bd.substring(0,300); this.addEventListener('loadend',function(){ r.__rec.s=r.status; try{ r.__rec.b=r.responseText.substring(0,300); }catch(e){} }); return os.apply(this,arguments); };"
                         " return 'hooked'; } return 'already';"
                     )
                 except Exception:
@@ -904,7 +906,7 @@ def main():
                     print(f"⚠️ 弹窗状态检查失败: {e}")
                 # 输出点击后捕获到的网络请求与响应
                 try:
-                    sb.sleep(2)
+                    sb.sleep(5)
                     calls = sb.execute_script(
                         "return JSON.stringify((window.__calls||[]).slice(-10));"
                     )
