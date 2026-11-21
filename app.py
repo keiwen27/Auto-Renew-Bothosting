@@ -987,11 +987,11 @@ def main():
                             )
                         )
                     else:
-                        print("⚠️ 续期结果未知，到期日期未变化，请手动检查")
+                        print("⚠️ 续期未生效: 网站已禁止自动环境续期(RENEW_AUTOMATED), 请用自己的浏览器手动续期")
                         send_telegram_message(
                             format_notification(
-                                "⚠️ 续期可能未成功",
-                                extra="请登录后台检查",
+                                "⏰ 请手动续期",
+                                extra=f"🚫 网站已禁止自动续期(RENEW_AUTOMATED), 请用自己的浏览器打开 bot-hosting.net 手动点续期; 到期时间: {new_expiry or current_expiry or '未知'}",
                                 expiry_date=current_expiry or "（未获取到）"
                             )
                         )
